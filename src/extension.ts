@@ -50,10 +50,18 @@ async function runDmypy(folder: vscode.Uri, args: string[]): Promise<boolean> {
 		await spawn(
 			pythonPath,
 			['-m', 'mypy.dmypy'].concat(args),
-			{cwd: folder.fsPath});
+			{cwd: folder.fsPath, capture: ['stdout', 'stderr']});
 		return true;
 	} catch (ex) {
-		outputChannel.appendLine(`Error running dmypy:\n${ex}`);
+		outputChannel.appendLine(ex.toString());
+		if (ex.name === 'ChildProcessError') {
+			if (ex.stdout) {
+				outputChannel.appendLine(`stdout:\n${ex.stdout}`);
+			}
+			if (ex.stderr) {
+				outputChannel.appendLine(`stderr:\n${ex.stderr}`);
+			}
+		}
 		return false;
 	}
 }
