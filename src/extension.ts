@@ -115,13 +115,13 @@ async function checkWorkspace(folder: vscode.Uri) {
 			const thisFileDiagnostics = fileDiagnostics.get(fileUri)!;
 			const line = parseInt(groups.line) - 1;
 			const column = parseInt(groups.column || '0');
-			thisFileDiagnostics.push(
-				new vscode.Diagnostic(
-					new vscode.Range(line, column, line, column),
-					groups.message,
-					groups.type === 'error' ? vscode.DiagnosticSeverity.Error : vscode.DiagnosticSeverity.Information
-				)
+			const diagnostic = new vscode.Diagnostic(
+				new vscode.Range(line, column, line, column),
+				groups.message,
+				groups.type === 'error' ? vscode.DiagnosticSeverity.Error : vscode.DiagnosticSeverity.Information
 			);
+			diagnostic.source = 'mypy';
+			thisFileDiagnostics.push(diagnostic);
 		}
 		diagnostics.set(Array.from(fileDiagnostics.entries()));
 	}
