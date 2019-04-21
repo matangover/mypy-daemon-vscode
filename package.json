@@ -4,6 +4,10 @@
 	"description": "Run mypy to analyze and typecheck your Python code.",
 	"version": "0.0.1",
 	"publisher": "matangover",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/matangover/mypy-vscode.git"
+	},
 	"engines": {
 		"vscode": "^1.33.0"
 	},
