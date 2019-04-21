@@ -1,27 +1,59 @@
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
+import { spawn } from 'child-process-promise';
 
-// this method is called when your extension is activated
-// your extension is activated the very first time the command is executed
+const runningDaemons = new Set<vscode.Uri>();
+const outputChannel = vscode.window.createOutputChannel('Mypy');
+
 export function activate(context: vscode.ExtensionContext) {
-
-	// Use the console to output diagnostic information (console.log) and errors (console.error)
-	// This line of code will only be executed once when your extension is activated
-		console.log('Congratulations, your extension "mypy" is now active!');
-
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with registerCommand
-	// The commandId parameter must match the command field in package.json
-	let disposable = vscode.commands.registerCommand('extension.helloWorld', () => {
-		// The code you place here will be executed every time your command is executed
-
-		// Display a message box to the user
-		vscode.window.showInformationMessage('Hello World!');
-	});
-
-	context.subscriptions.push(disposable);
+	
+	if (vscode.workspace.workspaceFolders) {
+		vscode.workspace.workspaceFolders.forEach(folder => startDaemon(folder.uri));
+	}
+	context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(workspaceFoldersChanged));
+	context.subscriptions.push(outputChannel);
 }
 
-// this method is called when your extension is deactivated
-export function deactivate() {}
+export async function deactivate(): Promise<void> {
+	let daemonStopPromises = Array.from(runningDaemons).map(folder => stopDaemon(folder));
+	await Promise.all(daemonStopPromises);
+}
+
+function workspaceFoldersChanged(e: vscode.WorkspaceFoldersChangeEvent) {
+	e.added.forEach(folder => startDaemon(folder.uri));
+	e.removed.forEach(folder => stopDaemon(folder.uri));
+}
+
+async function startDaemon(folder: vscode.Uri): Promise<void> {
+	outputChannel.appendLine(`Start daemon: ${folder.fsPath}`);
+	if (await runDmypy(folder, ['restart', '--', '--follow-imports=skip'])) {
+		runningDaemons.add(folder);
+	}
+}
+
+async function stopDaemon(folder: vscode.Uri): Promise<void> {
+	outputChannel.appendLine(`Stop daemon: ${folder.fsPath}`);
+	if (!runningDaemons.has(folder)) {
+		outputChannel.appendLine(`Daemon not running.`);
+		return;
+	}
+	
+	if(await runDmypy(folder, ['stop'])) {
+		runningDaemons.delete(folder);
+	}
+}
+
+async function runDmypy(folder: vscode.Uri, args: string[]): Promise<boolean> {
+	const config = vscode.workspace.getConfiguration('python', folder);
+	const pythonPath = config.pythonPath || 'python';
+
+	try {
+		await spawn(
+			pythonPath,
+			['-m', 'mypy.dmypy'].concat(args),
+			{cwd: folder.fsPath});
+		return true;
+	} catch (ex) {
+		outputChannel.appendLine(`Error running dmypy:\n${ex}`);
+		return false;
+	}
+}
