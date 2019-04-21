@@ -1,10 +1,13 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { spawn } from 'child-process-promise';
 
 const runningDaemons = new Set<vscode.Uri>();
 const diagnostics = new Map<vscode.Uri, vscode.DiagnosticCollection>();
 const outputChannel = vscode.window.createOutputChannel('Mypy');
 let _context: vscode.ExtensionContext | null;
+
+export const mypyOutputPattern = /^(?<file>[^:]+):(?<line>\d+)(:(?<column>\d+))?: (?<type>\w+): (?<message>.*)$/mg;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
 	_context = context;
@@ -29,7 +32,7 @@ function workspaceFoldersChanged(e: vscode.WorkspaceFoldersChangeEvent): void {
 
 async function startDaemon(folder: vscode.Uri): Promise<boolean> {
 	outputChannel.appendLine(`Start daemon: ${folder.fsPath}`);
-	const result = await runDmypy(folder, ['restart', '--', '--follow-imports=skip']);
+	const result = await runDmypy(folder, ['restart', '--', '--follow-imports=skip', '--show-column-numbers']);
 	if (result.success) {
 		runningDaemons.add(folder);
 	}
@@ -95,15 +98,32 @@ function documentSaved(document: vscode.TextDocument): void {
 }
 
 async function checkWorkspace(folder: vscode.Uri) {
+	// TODO: server can only process one request at a time.
+	outputChannel.appendLine(`Check workspace: ${folder.fsPath}`);
 	const result = await runDmypy(folder, ['check', '--', '.'], [0, 1]);
-	if (result.success) {
-		const diagnostics = getWorkspaceDiagnostics(folder);
-		diagnostics.clear();
-		const someFile = folder.with({path: folder.path + '/a.py'})
-		const someDiagnostic = new vscode.Diagnostic(
-			new vscode.Range(0, 3, 0, 12),
-			'Something is terribly wrong');
-		diagnostics.set(someFile, [someDiagnostic]);
+	const diagnostics = getWorkspaceDiagnostics(folder);
+	diagnostics.clear();
+	if (result.success && result.stdout) {
+		let fileDiagnostics = new Map<vscode.Uri, vscode.Diagnostic[]>();
+		let match: RegExpExecArray | null;
+		while ((match = mypyOutputPattern.exec(result.stdout)) !== null) {
+			const groups = match.groups as {file: string, line: string, column?: string, type: string, message: string};
+			const fileUri = vscode.Uri.file(path.join(folder.fsPath, groups.file));
+			if (!fileDiagnostics.has(fileUri)) {
+				fileDiagnostics.set(fileUri, []);
+			}
+			const thisFileDiagnostics = fileDiagnostics.get(fileUri)!;
+			const line = parseInt(groups.line) - 1;
+			const column = parseInt(groups.column || '0');
+			thisFileDiagnostics.push(
+				new vscode.Diagnostic(
+					new vscode.Range(line, column, line, column),
+					groups.message,
+					groups.type === 'error' ? vscode.DiagnosticSeverity.Error : vscode.DiagnosticSeverity.Information
+				)
+			);
+		}
+		diagnostics.set(Array.from(fileDiagnostics.entries()));
 	}
 }
 
