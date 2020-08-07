@@ -114,7 +114,7 @@ async function checkWorkspace(folder: vscode.Uri) {
 			}
 			const thisFileDiagnostics = fileDiagnostics.get(fileUri)!;
 			const line = parseInt(groups.line) - 1;
-			const column = parseInt(groups.column || '0');
+			const column = parseInt(groups.column || '1') - 1;
 			const diagnostic = new vscode.Diagnostic(
 				new vscode.Range(line, column, line, column),
 				groups.message,
